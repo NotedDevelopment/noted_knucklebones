@@ -179,6 +179,9 @@ rule files have not drifted apart.
 
 ## Credits
 
+- **[sd-phone](https://github.com/Samuels-Development/sd-phone)** by
+  Samuel's Development, for the inspiration behind this app and for help with
+  the gameplay framework.
 - **Dice and chip sounds:** [Casino Audio](https://kenney.nl/assets/casino-audio)
   by Kenney, CC0 1.0. See `ui/sounds/LICENSE.txt`.
 - **Nunito:** by the Nunito Project Authors, SIL Open Font License 1.1. See
