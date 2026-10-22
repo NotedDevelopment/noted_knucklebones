@@ -1,0 +1,3 @@
+# Runtime logs hold player licences; never commit them.
+logs/*.log
+__pycache__/

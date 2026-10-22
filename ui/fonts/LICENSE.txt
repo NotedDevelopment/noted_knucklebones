@@ -1,0 +1,4 @@
+nunito.woff2       Nunito, SIL Open Font License 1.1, see OFL-Nunito.txt
+alfaslabone.woff2  Alfa Slab One, SIL Open Font License 1.1, see OFL-AlfaSlabOne.txt
+
+Both are the unmodified latin subsets served by Google Fonts.
