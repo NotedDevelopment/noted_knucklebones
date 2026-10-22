@@ -25,6 +25,14 @@ lib = { logger = function(src, event, message, data) logged[#logged + 1] = { src
 local printed = {}
 local rawprint = print
 function print(...) printed[#printed + 1] = table.concat({ ... }, ' ') end
+local convars = { knucklebones_webhook = 'https://discord.test/api/webhooks/1/abc' }
+function GetConvar(name, default) return convars[name] or default end
+local posts = {}
+function PerformHttpRequest(url, cb, method, body, headers)
+    posts[#posts + 1] = { url = url, method = method, body = body, headers = headers }
+    cb(204)
+end
+json = { encode = function(value) return value end } -- keep the payload as a table for the asserts
 math.randomseed(4242)
 dofile('server/main.lua')
 
@@ -63,6 +71,7 @@ assert(last(2, 'error'), 'bad code rejected')
 fire('kbphone:join', 2, view.code:lower())
 local joined = assert(last(2, 'update'), 'joiner gets a snapshot')
 assert(joined.seat == 1 and joined.game.phase == 1, 'joining starts the game')
+assert(joined.cpu == false, 'a game between people is not a CPU game')
 assert(last(1, 'update').game.phase == 1, 'creator sees the start')
 fire('kbphone:create', 2)
 assert(last(2, 'error'), 'cannot open a second room while seated')
@@ -114,6 +123,7 @@ local cpu = game.names[2 - game.seat]
 local known = false
 for _, name in ipairs(Config.CpuNames) do if name == cpu then known = true end end
 assert(game.seat ~= nil and game.game.phase == 1 and known, 'CPU game starts at once with a configured name: ' .. tostring(cpu))
+assert(game.cpu == true, 'CPU game is flagged for the app')
 fire('kbphone:rooms', 2)
 assert(#last(2, 'rooms').rooms == 0, 'CPU games are never listed')
 runAi()
@@ -150,15 +160,29 @@ fire('kbphone:nickname', 6, 'bad<script>')
 assert(last(6, 'error'), 'bad characters rejected')
 fire('kbphone:nickname', 6, '  Slick   Rick ')
 assert(last(6, 'profile').nickname == 'Slick Rick', 'nickname trimmed and saved')
-assert(#logged == 1 and logged[1].src == 6 and logged[1].data.after == 'Slick Rick' and logged[1].data.license == 'license:lic6', 'change logged to lib.logger')
+-- Default destinations: Discord and console on, file and ox_lib off.
+assert(#posts == 1 and posts[1].url == convars.knucklebones_webhook and posts[1].method == 'POST', 'change posted to the Discord webhook')
+local embed = posts[1].body.embeds[1]
+local fields = {}
+for _, field in ipairs(embed.fields) do fields[field.name] = field.value end
+assert(embed.title == 'Nickname changed' and fields.After == 'Slick Rick' and fields.Before == '(none)', 'embed shows before and after')
+assert(fields.Character == 'Char6' and fields.Account == 'P6' and fields.Licence == 'license:lic6', 'embed identifies the player')
 assert(printed[#printed]:find('Char6') and printed[#printed]:find('Slick Rick'), 'change printed to the console')
+assert(files['logs/nicknames.log'] == nil and #logged == 0, 'file and ox_lib logging are off by default')
 assert(kvp['nickname:license:lic6'] == 'Slick Rick', 'nickname persisted')
-assert(files['logs/nicknames.log'] and files['logs/nicknames.log']:find('Slick Rick'), 'change appended to logs/nicknames.log')
 fire('kbphone:nickname', 6, 'Other')
 assert(last(6, 'error'), 'rate limited')
 fire('kbphone:create', 6, true)
 assert(last(6, 'update').names[1] == 'Slick Rick', 'seat uses the nickname')
-nicknames = nil
 fire('kbphone:leave', 6)
+
+-- Every destination follows its switch.
+Config.Logging = { Discord = false, Console = false, File = true, OxLib = true }
+local printedBefore = #printed
+fire('kbphone:nickname', 7, 'Buzz')
+assert(#posts == 1, 'Discord off: nothing posted')
+assert(#printed == printedBefore, 'console off: nothing printed')
+assert(files['logs/nicknames.log'] and files['logs/nicknames.log']:find('"" %-> "Buzz"'), 'file on: change appended')
+assert(#logged == 1 and logged[1].src == 7 and logged[1].data.after == 'Buzz', 'ox_lib on: change sent to lib.logger')
 print = rawprint
-print('PASS: phone rooms by code, authority, spectating, leave/forfeit, CPU game, rematch, disconnect, public/private, nicknames')
+print('PASS: phone rooms by code, authority, spectating, leave/forfeit, CPU game, rematch, disconnect, public/private, nicknames, logging switches and Discord webhook')

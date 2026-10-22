@@ -6,6 +6,10 @@ play from their phones, other players can watch, and there is a CPU opponent
 for playing alone. The server runs every game, so clients cannot fake rolls or
 moves.
 
+[![Watch Knucklebones running on LB Phone in game](https://img.youtube.com/vi/52yy1nFXEyo/maxresdefault.jpg)](https://youtu.be/52yy1nFXEyo)
+
+*Click the image to watch it in game on YouTube.*
+
 ![The lobby, a game in progress, the public games list, and the how-to-play guide](docs/preview.png)
 
 ## Features
@@ -55,7 +59,7 @@ moves.
 3. Restart the server, or start the resource. The app registers itself with
    LB Phone and re-registers if LB Phone restarts.
 
-The `logs` folder must stay in place. The server writes nickname changes there.
+Keep the `logs` folder in place if you turn on file logging. The server writes there.
 
 ## Configuration
 
@@ -68,6 +72,7 @@ Everything lives in `config.lua`. Changes need a resource restart, not a rebuild
 | `Nickname.MinLength` / `MaxLength` | 2 / 16 | Allowed nickname length. The app reads these from the server. |
 | `Nickname.Pattern` | letters, digits, spaces, `'` and `-` | A Lua pattern every nickname must match. |
 | `Nickname.Cooldown` | 5 | Seconds a player must wait between nickname changes. |
+| `Logging` | Discord and console on | Where nickname changes are logged. See [Nickname logging](#nickname-logging). |
 | `TurnTimeout` | 180 | Seconds per turn in games between two people. A player who runs out of time forfeits. CPU games have no clock. |
 | `AiThinkTime` | 900 | Milliseconds the CPU waits before each roll and placement. |
 | `RoomCodeLength` | 6 | Length of room codes. |
@@ -86,19 +91,59 @@ To change the icon, replace `ui/icon.svg`.
    total wins.
 
 Forfeiting, leaving or disconnecting mid-game hands the win to the opponent.
-After a game, both players press **Play again** for a rematch. The CPU always
-accepts.
+After a game, both players press **Play again** for a rematch. Against the
+CPU, which accepts at once, **Play again** needs a second tap, so a reflex tap
+where **Roll** used to be does not start a new game.
 
 ## Nickname logging
 
-Each change records the time, the character's name, the player's licence and
-FiveM name, and the old and new nickname. It goes to three places:
+Each change records the character's name, the player's FiveM name, server ID
+and licence, and the old and new nickname. `Config.Logging` has a switch for
+each destination, and any combination can be on:
 
-- **The server console.** txAdmin keeps it in its logs.
-- **`logs/nicknames.log`** inside the resource. Lines are appended.
-- **`lib.logger`** with the event name `nickname`. ox_lib only forwards this
-  when a log service is configured with `ox:logger` and its key in your
-  `ox.cfg`.
+| Switch | Default | Destination |
+|---|---|---|
+| `Discord` | on | An embed posted to a Discord webhook. |
+| `Console` | on | The server console. txAdmin keeps it in its logs. |
+| `File` | off | `logs/nicknames.log` inside the resource. Lines are appended. |
+| `OxLib` | off | ox_lib's `lib.logger` with the event `nickname`. ox_lib only forwards it when `ox:logger` and its key are set in your `ox.cfg`. |
+
+### Setting up Discord logging
+
+1. **Create a webhook.** In Discord, open the settings of the channel that
+   should receive the logs, ideally a staff-only one. Go to **Integrations**,
+   then **Webhooks**, then **New Webhook**. Name it if you like, then press
+   **Copy Webhook URL**. You need the Manage Webhooks permission on that
+   channel.
+2. **Add it to `server.cfg`.** In txAdmin this is under **CFG Editor**. Add
+   this line anywhere, with your URL in the quotes:
+
+   ```cfg
+   set knucklebones_webhook "https://discord.com/api/webhooks/..."
+   ```
+
+3. **Leave the switch on.** `Config.Logging.Discord` is `true` by default.
+4. **Restart the server**, or apply it live from the server console:
+
+   ```cfg
+   set knucklebones_webhook "https://discord.com/api/webhooks/..."
+   ```
+
+   The resource reads the setting each time it posts, so no resource restart
+   is needed.
+5. **Test it.** Change your nickname in the app. An embed should appear in the
+   channel within a second or two.
+
+**Keep the URL private.** Anyone holding it can post in that channel. Use
+`set`, never `setr`, because `setr` sends the value to every player. The URL is
+deliberately not read from `config.lua`, because every client downloads that
+file and it is public in this repository. If a URL leaks, delete the webhook
+in Discord and make a new one.
+
+**If nothing arrives:** about ten seconds after start, the server console
+warns if Discord logging is on but `knucklebones_webhook` is empty. If Discord
+rejects a post, for example because the webhook was deleted, the console prints
+the HTTP status it returned.
 
 Nicknames are stored per licence in the resource's key-value store, so they
 survive restarts and follow the player across characters.

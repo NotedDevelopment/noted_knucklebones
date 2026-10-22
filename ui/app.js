@@ -19,6 +19,11 @@ try { privacy = localStorage.getItem('kb-privacy') === 'private' ? 'private' : '
 let busy = false;
 let rolling = false;    // the centre die is tumbling; lanes wait until it settles
 let rollTimer, settleTimer, toastTimer;
+// CPU rematches start instantly, so Play again needs a second, deliberate tap.
+let rematchArmedAt = 0;
+let rematchTimer = null;
+const REMATCH_CONFIRM_MS = 3000; // the armed state lasts this long
+const REMATCH_GUARD_MS = 400;    // a second tap faster than this is a reflex double-tap, ignored
 
 // Sound cues are synthesised with the Web Audio API so the resource ships no audio files.
 const sound = (() => {
@@ -226,6 +231,8 @@ function render() {
   $('rollButton').disabled = busy;
   $('rematchButton').hidden = !seated || game.phase < 2;
   $('rematchButton').disabled = busy || snapshot.ready?.[snapshot.seat] === true;
+  $('rematchButton').classList.toggle('armed', rematchArmedAt > 0);
+  $('rematchButton').textContent = rematchArmedAt > 0 ? 'Tap again to start' : 'Play again';
   $('stopButton').hidden = seated;
   $('actions').hidden = $('rollButton').hidden && $('rematchButton').hidden && $('stopButton').hidden;
   $('rollText').hidden = !$('actions').hidden;
@@ -299,6 +306,27 @@ function transition(before, after) {
     void $('status').offsetWidth;
     $('status').classList.add('pulse');
   }
+}
+
+function disarmRematch() {
+  rematchArmedAt = 0;
+  clearTimeout(rematchTimer);
+}
+
+function rematch() {
+  if (!snapshot) return;
+  if (!snapshot.cpu) { act('rematch'); return; }
+  const now = Date.now();
+  if (!rematchArmedAt) {
+    rematchArmedAt = now;
+    clearTimeout(rematchTimer);
+    rematchTimer = setTimeout(() => { disarmRematch(); render(); }, REMATCH_CONFIRM_MS);
+    render();
+    return;
+  }
+  if (now - rematchArmedAt < REMATCH_GUARD_MS) return;
+  disarmRematch();
+  act('rematch');
 }
 
 async function act(action, column) {
@@ -386,7 +414,7 @@ document.addEventListener('click', event => {
     case 'leave': post('leave'); break;
     case 'stopSpectating': post('stopSpectating'); snapshot = false; view = 'browse'; render(); post('rooms'); break;
     case 'roll': act('roll'); break;
-    case 'rematch': act('rematch'); break;
+    case 'rematch': rematch(); break;
     case 'mute': sound.toggle(); renderMute(); break;
   }
 });
@@ -406,6 +434,7 @@ window.addEventListener('message', event => {
     previous = snapshot;
     snapshot = data || false;
     if (snapshot) view = 'lobby'; // leaving a game later lands back on the lobby
+    if (!snapshot || !previous || previous.match !== snapshot.match || snapshot.game.phase < 2) disarmRematch();
     $('error').textContent = '';
     if (!snapshot || !previous || previous.match !== snapshot.match) { clearInterval(rollTimer); clearTimeout(settleTimer); rolling = false; }
     render();

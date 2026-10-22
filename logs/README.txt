@@ -1,1 +1,1 @@
-Nickname changes are appended to nicknames.log by server/main.lua.
+When Config.Logging.File is on, nickname changes are appended to nicknames.log here.

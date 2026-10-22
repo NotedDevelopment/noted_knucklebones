@@ -64,16 +64,61 @@ local function cpuName()
     return names[math.random(1, #names)]
 end
 
--- Three sinks: the server console (kept in txAdmin's logs), logs/nicknames.log in this
--- resource, and ox_lib's logger, which forwards only when ox:logger and its key are set.
-local function log(player, event, message, data)
+-- Logging. Each destination has a switch in Config.Logging. The Discord webhook is a
+-- server convar, never config: config.lua is a shared script that every client downloads.
+-- Read on every post, so the `set` line works anywhere in server.cfg and can be changed live.
+local function webhookUrl()
+    return GetConvar('knucklebones_webhook', '')
+end
+local function logging(key, default)
+    local settings = Config.Logging or {}
+    if settings[key] == nil then return default end
+    return settings[key] == true
+end
+-- Warn once the rest of server.cfg has run, not at load, so a later `set` line isn't flagged.
+CreateThread(function()
+    Wait(10000)
+    if logging('Discord', true) and webhookUrl() == '' then
+        print('^3[noted_knucklebones_phone]^0 Discord logging is on but the knucklebones_webhook convar is empty; nothing will be posted.')
+    end
+end)
+
+local function postDiscord(webhook, title, fields)
+    local embedFields = {}
+    for _, field in ipairs(fields) do
+        local value = tostring(field[2] or '')
+        embedFields[#embedFields + 1] = { name = field[1], value = value ~= '' and value or '(none)', inline = field[3] == true }
+    end
+    local body = json.encode({
+        username = 'Knucklebones',
+        embeds = { {
+            title = title, color = 0xE8B84A, fields = embedFields,
+            footer = { text = GetCurrentResourceName() },
+            timestamp = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+        } },
+    })
+    PerformHttpRequest(webhook, function(status)
+        if status < 200 or status >= 300 then
+            print(('^3[noted_knucklebones_phone]^0 Discord webhook returned HTTP %s'):format(tostring(status)))
+        end
+    end, 'POST', body, { ['Content-Type'] = 'application/json' })
+end
+
+-- `message` is the one-line text for the console and file; `discord` is { title, fields }.
+local function log(player, event, message, data, discord)
     local line = ('[%s] %s: %s'):format(os.date('%Y-%m-%d %H:%M:%S'), event, message)
-    print('[noted_knucklebones_phone] ' .. line)
-    local resource = GetCurrentResourceName()
-    local path = ('logs/%ss.log'):format(event)
-    local existing = LoadResourceFile(resource, path) or ''
-    SaveResourceFile(resource, path, existing .. line .. '\n', -1)
-    if lib and lib.logger then
+    if logging('Console', true) then print('[noted_knucklebones_phone] ' .. line) end
+    if logging('File', false) then
+        local resource = GetCurrentResourceName()
+        local path = ('logs/%ss.log'):format(event)
+        local existing = LoadResourceFile(resource, path) or ''
+        SaveResourceFile(resource, path, existing .. line .. '\n', -1)
+    end
+    local webhook = webhookUrl()
+    if logging('Discord', true) and webhook ~= '' and discord then
+        postDiscord(webhook, discord.title, discord.fields)
+    end
+    if logging('OxLib', false) and lib and lib.logger then
         pcall(lib.logger, player, event, 'noted_knucklebones_phone: ' .. message, data)
     end
 end
@@ -89,6 +134,7 @@ local function snapshot(room, player)
         code = room.code, match = match.id, revision = match.revision, public = room.public == true,
         game = KB.decode(match.state), names = names, ready = ready,
         seat = KBMatch.seat(match, player), spectators = room.spectatorCount,
+        cpu = KBMatch.aiSide(match) ~= nil,
     }
 end
 
@@ -300,8 +346,16 @@ RegisterNetEvent('kbphone:nickname', function(raw)
     local before = nickname(player) or ''
     nicknames[key] = name ~= '' and name or false
     pcall(SetResourceKvp, 'nickname:' .. key, name)
-    log(player, 'nickname', ('%s (%s, %s) changed nickname "%s" -> "%s"'):format(characterName(player), key, GetPlayerName(player) or '?', before, name),
-        { license = key, character = characterName(player), before = before, after = name })
+    local character, account = characterName(player), GetPlayerName(player) or '?'
+    log(player, 'nickname', ('%s (%s, %s) changed nickname "%s" -> "%s"'):format(character, key, account, before, name),
+        { license = key, character = character, before = before, after = name },
+        {
+            title = name ~= '' and 'Nickname changed' or 'Nickname cleared',
+            fields = {
+                { 'Character', character, true }, { 'Account', account, true }, { 'Server ID', player, true },
+                { 'Before', before, true }, { 'After', name, true }, { 'Licence', key, false },
+            },
+        })
     -- A seat already taken under the old name follows the change.
     local room = rooms[membership[player] or '']
     if room then
